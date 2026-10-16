@@ -1,0 +1,30 @@
+# Go build and test output
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/coverage/
+/coverage.out
+/go.work
+/go.work.sum
+/vendor/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local.yaml
+*.pem
+*.key
+
+# Runtime and editor files
+*.log
+/tmp/
+.DS_Store
+.idea/
+.vscode/

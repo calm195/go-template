@@ -1,0 +1,84 @@
+package config
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/spf13/viper"
+)
+
+// Config 保存服务设置及可选中间件配置。
+type Config struct {
+	Server struct {
+		Address                                    string
+		ReadTimeout, WriteTimeout, ShutdownTimeout time.Duration
+	}
+	Log      struct{ Level string }
+	Database struct {
+		Driver, DSN      string
+		MaxOpen, MaxIdle int
+		MaxLifetime      time.Duration
+	}
+	Redis struct {
+		Enabled           bool
+		Address, Password string
+		DB                int
+	}
+	RocketMQ struct {
+		Enabled     bool
+		NameServers []string
+		Group       string
+	}
+}
+
+// Load 加载配置，环境变量优先于 YAML 配置。
+func Load(path string) (Config, error) {
+	v := viper.New()
+	v.SetDefault("server.address", ":8080")
+	v.SetDefault("server.readtimeout", "5s")
+	v.SetDefault("server.writetimeout", "10s")
+	v.SetDefault("server.shutdowntimeout", "10s")
+	v.SetDefault("log.level", "info")
+	v.SetDefault("database.driver", "")
+	v.SetDefault("database.dsn", "")
+	v.SetDefault("database.maxopen", 20)
+	v.SetDefault("database.maxidle", 5)
+	v.SetDefault("database.maxlifetime", "30m")
+	v.SetDefault("redis.enabled", false)
+	v.SetDefault("redis.address", "localhost:6379")
+	v.SetDefault("redis.password", "")
+	v.SetDefault("redis.db", 0)
+	v.SetDefault("rocketmq.enabled", false)
+	v.SetDefault("rocketmq.nameservers", []string{"localhost:9876"})
+	v.SetDefault("rocketmq.group", "go-template")
+	v.SetEnvPrefix("APP")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+	if path != "" {
+		v.SetConfigFile(path)
+		if err := v.ReadInConfig(); err != nil {
+			return Config{}, fmt.Errorf("read config: %w", err)
+		}
+	}
+	var c Config
+	if err := v.Unmarshal(&c); err != nil {
+		return c, fmt.Errorf("decode config: %w", err)
+	}
+	if c.Database.Driver != "" && c.Database.Driver != "mysql" && c.Database.Driver != "postgres" {
+		return c, fmt.Errorf("unsupported database driver %q", c.Database.Driver)
+	}
+	if c.Database.Driver != "" && c.Database.DSN == "" {
+		return c, fmt.Errorf("database DSN is required")
+	}
+	if c.Server.ReadTimeout <= 0 || c.Server.WriteTimeout <= 0 || c.Server.ShutdownTimeout <= 0 {
+		return c, fmt.Errorf("server timeouts must be positive")
+	}
+	if c.Database.MaxOpen <= 0 || c.Database.MaxIdle < 0 || c.Database.MaxIdle > c.Database.MaxOpen || c.Database.MaxLifetime <= 0 {
+		return c, fmt.Errorf("invalid database pool settings")
+	}
+	if c.RocketMQ.Enabled && (len(c.RocketMQ.NameServers) == 0 || c.RocketMQ.Group == "") {
+		return c, fmt.Errorf("RocketMQ nameservers and group are required")
+	}
+	return c, nil
+}
