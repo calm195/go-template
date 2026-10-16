@@ -1,0 +1,77 @@
+services:
+  app:
+    build: .
+    ports: ["8080:8080"]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    environment:
+      APP_DATABASE_DRIVER: ${APP_DATABASE_DRIVER:-}
+      APP_DATABASE_DSN: ${APP_DATABASE_DSN:-}
+      APP_REDIS_ENABLED: ${APP_REDIS_ENABLED:-false}
+      APP_REDIS_ADDRESS: redis:6379
+      APP_ROCKETMQ_ENABLED: ${APP_ROCKETMQ_ENABLED:-false}
+      APP_ROCKETMQ_NAMESERVERS: namesrv:9876
+  mysql:
+    image: mysql:8.4
+    profiles: [mysql]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local-root-only}
+      MYSQL_DATABASE: app
+      MYSQL_USER: app
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-local-app-only}
+    ports: ["127.0.0.1:3306:3306"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      test: [CMD, mysqladmin, ping, -h, localhost]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  postgres:
+    image: postgres:17-alpine
+    profiles: [postgres]
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-app-only}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    profiles: [redis]
+    ports: ["127.0.0.1:6379:6379"]
+    command: [redis-server, --appendonly, "yes"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  namesrv:
+    image: apache/rocketmq:5.3.2
+    profiles: [rocketmq]
+    command: sh mqnamesrv
+    environment:
+      JAVA_OPT_EXT: -Xms256m -Xmx256m
+    ports: ["127.0.0.1:9876:9876"]
+  broker:
+    image: apache/rocketmq:5.3.2
+    profiles: [rocketmq]
+    command: sh mqbroker -n namesrv:9876 -c /home/rocketmq/broker.conf
+    depends_on: [namesrv]
+    environment:
+      JAVA_OPT_EXT: -Xms256m -Xmx256m -Xmn128m
+    ports: ["127.0.0.1:10909:10909", "127.0.0.1:10911:10911"]
+    volumes:
+      - ./configs/broker.conf:/home/rocketmq/broker.conf:ro
+      - rocketmq-data:/home/rocketmq/store
+volumes:
+  mysql-data:
+  postgres-data:
+  redis-data:
+  rocketmq-data:
